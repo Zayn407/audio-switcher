@@ -91,9 +91,9 @@ class AudioSwitcher:
                 for device_info in self.devices:
                     if device_info['name'] == device_name:
                         # Set as default device using PolicyConfig
-                        from pycaw.api.policyconfigclient import PolicyConfigClient
+                        from policy_config import PolicyConfigClient
                         client = PolicyConfigClient()
-                        client.set_default_endpoint(device_info['id'])
+                        client.set_default_endpoint(device_info['id'], 0)  # 0 = eConsole role
 
                         self.current_device = device_name
                         return True
