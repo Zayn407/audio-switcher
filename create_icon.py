@@ -1,102 +1,89 @@
 from PIL import Image, ImageDraw
 
 def create_icon():
-    """Create a professional audio switcher icon"""
+    """Create a simple and recognizable audio switcher icon"""
     sizes = [256, 128, 64, 48, 32, 16]
     images = []
 
     for size in sizes:
-        # Create image with white background
-        img = Image.new('RGBA', (size, size), (255, 255, 255, 255))
+        # Create image with transparent background
+        img = Image.new('RGBA', (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # Scale factor
         scale = size / 256
 
-        # Background circle
-        padding = int(10 * scale)
+        # Draw a bold circular background
+        padding = int(8 * scale)
+        # Gradient-like effect with two circles
         draw.ellipse([padding, padding, size - padding, size - padding],
-                     fill=(41, 128, 185, 255))  # Blue background
+                     fill=(52, 152, 219, 255))  # Bright blue
 
-        # Draw speaker icon (left side)
-        center_y = size // 2
-        speaker_left = int(size * 0.25)
-
-        # Speaker body
-        speaker_size = int(30 * scale)
-        draw.rectangle(
-            [speaker_left - speaker_size // 2, center_y - speaker_size // 2,
-             speaker_left + speaker_size // 2, center_y + speaker_size // 2],
-            fill=(255, 255, 255, 255),
-            outline=(255, 255, 255, 255),
-            width=max(2, int(3 * scale))
-        )
-
-        # Sound wave lines
-        for i in range(3):
-            offset = int((15 + i * 10) * scale)
-            line_y = center_y - int(20 * scale) + offset
-            draw.line(
-                [speaker_left + speaker_size, line_y,
-                 speaker_left + speaker_size + int(15 * scale), line_y],
-                fill=(255, 255, 255, 255),
-                width=max(2, int(3 * scale))
-            )
-
-        # Draw speaker icon (right side)
-        speaker_right = int(size * 0.75)
-
-        # Speaker body
-        draw.rectangle(
-            [speaker_right - speaker_size // 2, center_y - speaker_size // 2,
-             speaker_right + speaker_size // 2, center_y + speaker_size // 2],
-            fill=(255, 255, 255, 255),
-            outline=(255, 255, 255, 255),
-            width=max(2, int(3 * scale))
-        )
-
-        # Sound wave lines
-        for i in range(3):
-            offset = int((15 + i * 10) * scale)
-            line_y = center_y - int(20 * scale) + offset
-            draw.line(
-                [speaker_right - speaker_size - int(15 * scale), line_y,
-                 speaker_right - speaker_size, line_y],
-                fill=(255, 255, 255, 255),
-                width=max(2, int(3 * scale))
-            )
-
-        # Draw switching arrows in the middle
+        # Draw large bold "A ⇄ B" symbol
         center_x = size // 2
-        arrow_size = int(20 * scale)
-        arrow_width = max(2, int(4 * scale))
+        center_y = size // 2
 
-        # Right arrow (top)
-        arrow_y_top = center_y - int(12 * scale)
-        draw.line(
-            [center_x - arrow_size, arrow_y_top, center_x + arrow_size, arrow_y_top],
-            fill=(255, 193, 7, 255),  # Yellow
-            width=arrow_width
-        )
-        # Arrow head
-        draw.polygon([
-            (center_x + arrow_size, arrow_y_top),
-            (center_x + arrow_size - int(10 * scale), arrow_y_top - int(8 * scale)),
-            (center_x + arrow_size - int(10 * scale), arrow_y_top + int(8 * scale))
+        # Font size simulation with rectangles for A and B
+        letter_size = int(40 * scale)
+        letter_thick = max(3, int(8 * scale))
+
+        # Letter A (left side)
+        a_x = int(size * 0.25)
+        # A triangle
+        a_points = [
+            (a_x, center_y + letter_size // 2),
+            (a_x - letter_size // 2, center_y + letter_size // 2),
+            (a_x, center_y - letter_size // 2)
+        ]
+        draw.polygon(a_points, fill=(255, 255, 255, 255))
+        # A horizontal bar
+        draw.rectangle([
+            a_x - letter_size // 3, center_y,
+            a_x + letter_thick, center_y + letter_thick
+        ], fill=(52, 152, 219, 255))
+
+        # Letter B (right side)
+        b_x = int(size * 0.75)
+        # B vertical line
+        draw.rectangle([
+            b_x - letter_size // 2, center_y - letter_size // 2,
+            b_x - letter_size // 2 + letter_thick, center_y + letter_size // 2
+        ], fill=(255, 255, 255, 255))
+        # B top bump
+        draw.ellipse([
+            b_x - letter_size // 2, center_y - letter_size // 2,
+            b_x + letter_size // 4, center_y
+        ], fill=(255, 255, 255, 255))
+        # B bottom bump
+        draw.ellipse([
+            b_x - letter_size // 2, center_y - letter_thick // 2,
+            b_x + letter_size // 4, center_y + letter_size // 2
+        ], fill=(255, 255, 255, 255))
+
+        # Draw BOLD double arrow in center
+        arrow_y = center_y
+        arrow_left = int(size * 0.38)
+        arrow_right = int(size * 0.62)
+        arrow_thick = max(3, int(8 * scale))
+
+        # Horizontal line
+        draw.rectangle([
+            arrow_left, arrow_y - arrow_thick // 2,
+            arrow_right, arrow_y + arrow_thick // 2
         ], fill=(255, 193, 7, 255))
 
-        # Left arrow (bottom)
-        arrow_y_bottom = center_y + int(12 * scale)
-        draw.line(
-            [center_x + arrow_size, arrow_y_bottom, center_x - arrow_size, arrow_y_bottom],
-            fill=(255, 193, 7, 255),
-            width=arrow_width
-        )
-        # Arrow head
+        # Left arrow head (pointing left)
+        arrow_head_size = int(15 * scale)
         draw.polygon([
-            (center_x - arrow_size, arrow_y_bottom),
-            (center_x - arrow_size + int(10 * scale), arrow_y_bottom - int(8 * scale)),
-            (center_x - arrow_size + int(10 * scale), arrow_y_bottom + int(8 * scale))
+            (arrow_left, arrow_y),
+            (arrow_left + arrow_head_size, arrow_y - arrow_head_size),
+            (arrow_left + arrow_head_size, arrow_y + arrow_head_size)
+        ], fill=(255, 193, 7, 255))
+
+        # Right arrow head (pointing right)
+        draw.polygon([
+            (arrow_right, arrow_y),
+            (arrow_right - arrow_head_size, arrow_y - arrow_head_size),
+            (arrow_right - arrow_head_size, arrow_y + arrow_head_size)
         ], fill=(255, 193, 7, 255))
 
         images.append(img)

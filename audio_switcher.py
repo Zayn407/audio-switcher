@@ -432,16 +432,31 @@ class AudioSwitcherGUI:
         messagebox.showinfo("Refreshed", f"Found {len(self.switcher.devices)} devices")
 
     def create_tray_icon_image(self):
-        """Create a simple icon for the system tray"""
+        """Load icon for the system tray"""
+        try:
+            # Try to load from icon.ico file
+            import sys
+            if getattr(sys, 'frozen', False):
+                # Running as compiled executable
+                icon_path = os.path.join(sys._MEIPASS, 'icon.ico')
+            else:
+                # Running as script
+                icon_path = 'icon.ico'
+
+            if os.path.exists(icon_path):
+                return Image.open(icon_path)
+        except:
+            pass
+
+        # Fallback: create simple icon
         width = 64
         height = 64
-        image = Image.new('RGB', (width, height), 'white')
+        image = Image.new('RGBA', (width, height), (52, 152, 219, 255))
         dc = ImageDraw.Draw(image)
 
-        # Draw a simple speaker icon
-        dc.rectangle([10, 20, 30, 44], fill='black')
-        dc.polygon([(30, 20), (30, 44), (50, 50), (50, 14)], fill='black')
-        dc.arc([52, 22, 60, 42], 270, 90, fill='black', width=3)
+        # Simple "A⇄B" text representation
+        dc.ellipse([4, 4, 60, 60], fill=(52, 152, 219, 255))
+        dc.text((15, 20), "A⇄B", fill=(255, 255, 255, 255))
 
         return image
 
