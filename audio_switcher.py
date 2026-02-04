@@ -25,8 +25,30 @@ class AudioSwitcher:
         CoInitialize()
         try:
             from pycaw.pycaw import AudioUtilities
+            from pycaw.constants import EDataFlow, ERole
+
+            # Get all audio render (output) devices
             devices = AudioUtilities.GetAllDevices()
-            self.devices = [d for d in devices if d.state == 1]  # Only active devices
+
+            # Filter for output devices, include both active and ready states
+            # state: 1 = ACTIVE, 0 = DISABLED, 2 = NOTPRESENT, 4 = UNPLUGGED
+            self.devices = []
+            for d in devices:
+                # Include devices with state 1 (active) or that have 'Speaker' or 'Headphone' in name
+                if d.state == 1:  # Active devices
+                    self.devices.append(d)
+
+            # If no active devices found, try to get default device
+            if not self.devices:
+                try:
+                    default_device = AudioUtilities.GetSpeakers()
+                    if default_device:
+                        self.devices.append(default_device)
+                except:
+                    pass
+
+        except Exception as e:
+            print(f"Error loading devices: {e}")
         finally:
             CoUninitialize()
 
@@ -392,10 +414,23 @@ class AudioSwitcherGUI:
         self.switcher.load_devices()
         self.device_listbox.delete(0, tk.END)
 
-        for device_name in self.switcher.get_device_names():
+        device_names = self.switcher.get_device_names()
+
+        if not device_names:
+            messagebox.showwarning(
+                "No Devices Found",
+                "No audio output devices detected.\n\n"
+                "Possible solutions:\n"
+                "1. Run as Administrator\n"
+                "2. Check if audio devices are enabled in Windows Sound Settings\n"
+                "3. Try restarting the application"
+            )
+            return
+
+        for device_name in device_names:
             self.device_listbox.insert(tk.END, device_name)
 
-        messagebox.showinfo("Refreshed", "Device list updated")
+        messagebox.showinfo("Success", f"Found {len(device_names)} device(s)")
 
     def register_saved_hotkeys(self):
         """Register hotkeys from config file"""
