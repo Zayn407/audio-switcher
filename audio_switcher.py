@@ -20,63 +20,56 @@ class AudioSwitcher:
         self.load_config()
 
     def load_devices(self):
-        """Load all audio output devices"""
+        """Load all audio output devices using simplified approach"""
         from comtypes import CoInitialize, CoUninitialize
         CoInitialize()
         try:
-            from pycaw.pycaw import AudioUtilities, IMMDeviceEnumerator, IMMDevice
-            from pycaw.constants import EDataFlow, ERole, DEVICE_STATE
-            from comtypes import CLSCTX_ALL
-            import comtypes
-
-            # Get device enumerator
-            deviceEnumerator = comtypes.CoCreateInstance(
-                CLSID_MMDeviceEnumerator,
-                IMMDeviceEnumerator,
-                CLSCTX_ALL
-            )
-
-            # Get collection of audio render devices
-            devices = deviceEnumerator.EnumAudioEndpoints(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
-            device_count = devices.GetCount()
+            # Use pycaw's higher level API
+            from pycaw.utils import AudioUtilities
 
             self.devices = []
-            for i in range(device_count):
-                device = devices.Item(i)
-                try:
-                    # Get device property store
-                    prop_store = device.OpenPropertyStore(0)
-                    # Get friendly name (PKEY_Device_FriendlyName)
-                    from pycaw.constants import PKEY_Device_FriendlyName
-                    friendly_name = prop_store.GetValue(PKEY_Device_FriendlyName)
 
-                    # Store device with its info
-                    device_info = {
-                        'device': device,
-                        'name': friendly_name.GetValue(),
-                        'id': device.GetId()
-                    }
-                    self.devices.append(device_info)
-                except Exception as e:
-                    print(f"Error reading device {i}: {e}")
-                    continue
+            # Get all audio devices (speakers, headphones, etc.)
+            all_devices = AudioUtilities.GetAllDevices()
 
-            # If no devices found, try to get default speaker
-            if not self.devices:
+            print(f"Scanning devices...")
+
+            for device in all_devices:
                 try:
-                    default_device = deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender.value, ERole.eMultimedia.value)
-                    if default_device:
-                        prop_store = default_device.OpenPropertyStore(0)
-                        from pycaw.constants import PKEY_Device_FriendlyName
-                        friendly_name = prop_store.GetValue(PKEY_Device_FriendlyName)
+                    # Get device name, ID and state
+                    device_name = device.FriendlyName
+                    device_id = device.id
+                    device_state = device.state
+
+                    # Only add ACTIVE output devices (speakers/headphones)
+                    # Skip microphones and inactive devices
+                    from pycaw.utils import AudioDeviceState
+
+                    is_active = device_state == AudioDeviceState.Active
+                    is_output = device_name and ('Speaker' in device_name or
+                                                 'Headphone' in device_name or
+                                                 'Headset' in device_name or
+                                                 'HDMI' in device_name or
+                                                 'NVIDIA' in device_name or
+                                                 'OMEN' in device_name or
+                                                 'Monitor' in device_name or
+                                                 'Output' in device_name)
+                    is_microphone = device_name and 'Microphone' in device_name
+
+                    if is_active and is_output and not is_microphone and device_name and device_id:
                         device_info = {
-                            'device': default_device,
-                            'name': friendly_name.GetValue(),
-                            'id': default_device.GetId()
+                            'device': device,
+                            'name': device_name,
+                            'id': device_id
                         }
                         self.devices.append(device_info)
+                        print(f"Found active output device: {device_name}")
+
                 except Exception as e:
-                    print(f"Error getting default device: {e}")
+                    print(f"Error reading device: {e}")
+                    continue
+
+            print(f"Total devices found: {len(self.devices)}")
 
         except Exception as e:
             print(f"Error loading devices: {e}")
