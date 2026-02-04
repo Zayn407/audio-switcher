@@ -7,6 +7,9 @@ from pycaw.constants import CLSID_MMDeviceEnumerator
 import keyboard
 import json
 import os
+import pystray
+from PIL import Image, ImageDraw
+import winsound
 
 
 class AudioSwitcher:
@@ -140,10 +143,15 @@ class AudioSwitcherGUI:
         self.switcher = AudioSwitcher()
         self.recording_hotkey = False
         self.hotkey_registered = False
+        self.tray_icon = None
+
+        # Handle window close - minimize to tray instead of exit
+        self.root.protocol("WM_DELETE_WINDOW", self.hide_to_tray)
 
         self.setup_ui()
         self.update_current_device()
         self.register_saved_hotkey()
+        self.setup_tray_icon()
 
     def setup_ui(self):
         # Title
@@ -297,6 +305,11 @@ class AudioSwitcherGUI:
         if self.switcher.switch_to_device(target):
             self.update_current_device()
             print(f"Switched to: {target}")
+            # Play a subtle beep sound
+            try:
+                winsound.MessageBeep(winsound.MB_OK)  # System default sound
+            except:
+                pass
         else:
             messagebox.showerror("Error", f"Failed to switch to {target}")
 
@@ -418,9 +431,59 @@ class AudioSwitcherGUI:
         self.update_current_device()
         messagebox.showinfo("Refreshed", f"Found {len(self.switcher.devices)} devices")
 
+    def create_tray_icon_image(self):
+        """Create a simple icon for the system tray"""
+        width = 64
+        height = 64
+        image = Image.new('RGB', (width, height), 'white')
+        dc = ImageDraw.Draw(image)
+
+        # Draw a simple speaker icon
+        dc.rectangle([10, 20, 30, 44], fill='black')
+        dc.polygon([(30, 20), (30, 44), (50, 50), (50, 14)], fill='black')
+        dc.arc([52, 22, 60, 42], 270, 90, fill='black', width=3)
+
+        return image
+
+    def setup_tray_icon(self):
+        """Setup system tray icon"""
+        def show_window(icon, item):
+            self.root.after(0, self.show_from_tray)
+
+        def quit_app(icon, item):
+            icon.stop()
+            self.root.after(0, self.root.quit)
+
+        def toggle_from_tray(icon, item):
+            self.root.after(0, self.toggle_devices)
+
+        menu = pystray.Menu(
+            pystray.MenuItem("Show", show_window, default=True),
+            pystray.MenuItem("Toggle Devices", toggle_from_tray),
+            pystray.MenuItem("Quit", quit_app)
+        )
+
+        icon_image = self.create_tray_icon_image()
+        self.tray_icon = pystray.Icon("AudioSwitcher", icon_image, "Audio Switcher", menu)
+
+        # Start tray icon in background thread
+        threading.Thread(target=self.tray_icon.run, daemon=True).start()
+
+    def hide_to_tray(self):
+        """Hide window to system tray"""
+        self.root.withdraw()
+
+    def show_from_tray(self):
+        """Show window from system tray"""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
     def run(self):
         """Start the application"""
         self.root.mainloop()
+        if self.tray_icon:
+            self.tray_icon.stop()
 
 
 if __name__ == "__main__":
