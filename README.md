@@ -91,6 +91,16 @@ The executable will be created in the `dist` folder.
 
 Hotkey configurations are automatically saved to `audio_config.json` and will be restored when you restart the application.
 
+### Auto-Start on Boot
+
+To make AudioSwitcher start automatically when Windows boots:
+
+1. Double-click `setup_autostart.bat`
+2. The program will start automatically on every boot and run in the background (system tray)
+
+To remove auto-start:
+1. Double-click `remove_autostart.bat`
+
 ## Creating a Shortcut (Optional)
 
 To make it easier to run the application:

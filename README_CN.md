@@ -69,6 +69,16 @@ python audio_switcher.py
 
 热键配置会自动保存到 `audio_config.json`，重启程序后会自动恢复。
 
+### 开机自动启动
+
+让AudioSwitcher开机自动启动：
+
+1. 双击运行 `setup_autostart.bat`
+2. 程序会在每次开机时自动启动并在后台运行（系统托盘）
+
+移除开机自动启动：
+1. 双击运行 `remove_autostart.bat`
+
 ## 构建安装程序
 
 如果你想自己构建安装程序：
