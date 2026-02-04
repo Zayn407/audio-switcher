@@ -433,32 +433,12 @@ class AudioSwitcherGUI:
 
     def create_tray_icon_image(self):
         """Load icon for the system tray"""
-        try:
-            # Try to load from icon.ico file
-            import sys
-            if getattr(sys, 'frozen', False):
-                # Running as compiled executable
-                icon_path = os.path.join(sys._MEIPASS, 'icon.ico')
-            else:
-                # Running as script
-                icon_path = 'icon.ico'
-
-            if os.path.exists(icon_path):
-                return Image.open(icon_path)
-        except:
-            pass
-
-        # Fallback: create simple icon
-        width = 64
-        height = 64
-        image = Image.new('RGBA', (width, height), (52, 152, 219, 255))
-        dc = ImageDraw.Draw(image)
-
-        # Simple "A⇄B" text representation
-        dc.ellipse([4, 4, 60, 60], fill=(52, 152, 219, 255))
-        dc.text((15, 20), "A⇄B", fill=(255, 255, 255, 255))
-
-        return image
+        import sys
+        if getattr(sys, 'frozen', False):
+            icon_path = os.path.join(sys._MEIPASS, 'icon.ico')
+        else:
+            icon_path = 'icon.ico'
+        return Image.open(icon_path)
 
     def setup_tray_icon(self):
         """Setup system tray icon"""
