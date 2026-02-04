@@ -140,6 +140,17 @@ class AudioSwitcherGUI:
         self.root.geometry("500x550")
         self.root.resizable(False, False)
 
+        # Set window icon (for taskbar)
+        try:
+            import sys
+            if getattr(sys, 'frozen', False):
+                icon_path = os.path.join(sys._MEIPASS, 'icon.ico')
+            else:
+                icon_path = 'icon.ico'
+            self.root.iconbitmap(icon_path)
+        except:
+            pass
+
         self.switcher = AudioSwitcher()
         self.recording_hotkey = False
         self.hotkey_registered = False
