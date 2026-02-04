@@ -24,37 +24,70 @@ class AudioSwitcher:
         from comtypes import CoInitialize, CoUninitialize
         CoInitialize()
         try:
-            from pycaw.pycaw import AudioUtilities
-            from pycaw.constants import EDataFlow, ERole
+            from pycaw.pycaw import AudioUtilities, IMMDeviceEnumerator, IMMDevice
+            from pycaw.constants import EDataFlow, ERole, DEVICE_STATE
+            from comtypes import CLSCTX_ALL
+            import comtypes
 
-            # Get all audio render (output) devices
-            devices = AudioUtilities.GetAllDevices()
+            # Get device enumerator
+            deviceEnumerator = comtypes.CoCreateInstance(
+                CLSID_MMDeviceEnumerator,
+                IMMDeviceEnumerator,
+                CLSCTX_ALL
+            )
 
-            # Filter for output devices, include both active and ready states
-            # state: 1 = ACTIVE, 0 = DISABLED, 2 = NOTPRESENT, 4 = UNPLUGGED
+            # Get collection of audio render devices
+            devices = deviceEnumerator.EnumAudioEndpoints(EDataFlow.eRender.value, DEVICE_STATE.ACTIVE.value)
+            device_count = devices.GetCount()
+
             self.devices = []
-            for d in devices:
-                # Include devices with state 1 (active) or that have 'Speaker' or 'Headphone' in name
-                if d.state == 1:  # Active devices
-                    self.devices.append(d)
+            for i in range(device_count):
+                device = devices.Item(i)
+                try:
+                    # Get device property store
+                    prop_store = device.OpenPropertyStore(0)
+                    # Get friendly name (PKEY_Device_FriendlyName)
+                    from pycaw.constants import PKEY_Device_FriendlyName
+                    friendly_name = prop_store.GetValue(PKEY_Device_FriendlyName)
 
-            # If no active devices found, try to get default device
+                    # Store device with its info
+                    device_info = {
+                        'device': device,
+                        'name': friendly_name.GetValue(),
+                        'id': device.GetId()
+                    }
+                    self.devices.append(device_info)
+                except Exception as e:
+                    print(f"Error reading device {i}: {e}")
+                    continue
+
+            # If no devices found, try to get default speaker
             if not self.devices:
                 try:
-                    default_device = AudioUtilities.GetSpeakers()
+                    default_device = deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.eRender.value, ERole.eMultimedia.value)
                     if default_device:
-                        self.devices.append(default_device)
-                except:
-                    pass
+                        prop_store = default_device.OpenPropertyStore(0)
+                        from pycaw.constants import PKEY_Device_FriendlyName
+                        friendly_name = prop_store.GetValue(PKEY_Device_FriendlyName)
+                        device_info = {
+                            'device': default_device,
+                            'name': friendly_name.GetValue(),
+                            'id': default_device.GetId()
+                        }
+                        self.devices.append(device_info)
+                except Exception as e:
+                    print(f"Error getting default device: {e}")
 
         except Exception as e:
             print(f"Error loading devices: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             CoUninitialize()
 
     def get_device_names(self):
         """Get list of device names"""
-        return [device.FriendlyName for device in self.devices]
+        return [device['name'] for device in self.devices]
 
     def switch_to_device(self, device_name):
         """Switch audio output to specified device"""
@@ -62,17 +95,12 @@ class AudioSwitcher:
             from comtypes import CoInitialize, CoUninitialize
             CoInitialize()
             try:
-                for device in self.devices:
-                    if device.FriendlyName == device_name:
-                        # Set as default device
-                        import subprocess
-                        # Using nircmd for device switching (more reliable)
-                        device_id = device.id
-
-                        # Alternative method using PolicyConfig
+                for device_info in self.devices:
+                    if device_info['name'] == device_name:
+                        # Set as default device using PolicyConfig
                         from pycaw.api.policyconfigclient import PolicyConfigClient
                         client = PolicyConfigClient()
-                        client.set_default_endpoint(device.id)
+                        client.set_default_endpoint(device_info['id'])
 
                         self.current_device = device_name
                         return True
@@ -81,6 +109,8 @@ class AudioSwitcher:
                 CoUninitialize()
         except Exception as e:
             print(f"Error switching device: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def load_config(self):
