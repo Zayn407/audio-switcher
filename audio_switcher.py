@@ -4,7 +4,6 @@ import threading
 from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from pycaw.constants import CLSID_MMDeviceEnumerator
-from pycaw.utils import AudioDevice
 import keyboard
 import json
 import os
@@ -16,7 +15,9 @@ class AudioSwitcher:
         self.current_device = None
         self.config_file = "audio_config.json"
         self.load_devices()
-        self.hotkeys = {}
+        self.device_a = None
+        self.device_b = None
+        self.toggle_hotkey = None
         self.load_config()
 
     def load_devices(self):
@@ -24,26 +25,16 @@ class AudioSwitcher:
         from comtypes import CoInitialize, CoUninitialize
         CoInitialize()
         try:
-            # Use pycaw's higher level API
-            from pycaw.utils import AudioUtilities
+            from pycaw.utils import AudioUtilities, AudioDeviceState
 
             self.devices = []
-
-            # Get all audio devices (speakers, headphones, etc.)
             all_devices = AudioUtilities.GetAllDevices()
-
-            print(f"Scanning devices...")
 
             for device in all_devices:
                 try:
-                    # Get device name, ID and state
                     device_name = device.FriendlyName
                     device_id = device.id
                     device_state = device.state
-
-                    # Only add ACTIVE output devices (speakers/headphones)
-                    # Skip microphones and inactive devices
-                    from pycaw.utils import AudioDeviceState
 
                     is_active = device_state == AudioDeviceState.Active
                     is_output = device_name and ('Speaker' in device_name or
@@ -63,24 +54,38 @@ class AudioSwitcher:
                             'id': device_id
                         }
                         self.devices.append(device_info)
-                        print(f"Found active output device: {device_name}")
 
                 except Exception as e:
-                    print(f"Error reading device: {e}")
                     continue
-
-            print(f"Total devices found: {len(self.devices)}")
 
         except Exception as e:
             print(f"Error loading devices: {e}")
-            import traceback
-            traceback.print_exc()
         finally:
             CoUninitialize()
 
     def get_device_names(self):
         """Get list of device names"""
         return [device['name'] for device in self.devices]
+
+    def get_current_device(self):
+        """Get the current default audio device"""
+        from comtypes import CoInitialize, CoUninitialize
+        CoInitialize()
+        try:
+            from pycaw.pycaw import AudioUtilities
+            from pycaw.constants import EDataFlow, ERole
+
+            speakers = AudioUtilities.GetSpeakers()
+            interface = speakers.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            # Get device friendly name
+            for device_info in self.devices:
+                if speakers.GetId() == device_info['id']:
+                    return device_info['name']
+            return "Unknown"
+        except:
+            return "Unknown"
+        finally:
+            CoUninitialize()
 
     def switch_to_device(self, device_name):
         """Switch audio output to specified device"""
@@ -90,11 +95,9 @@ class AudioSwitcher:
             try:
                 for device_info in self.devices:
                     if device_info['name'] == device_name:
-                        # Set as default device using PolicyConfig
                         from policy_config import PolicyConfigClient
                         client = PolicyConfigClient()
-                        client.set_default_endpoint(device_info['id'], 0)  # 0 = eConsole role
-
+                        client.set_default_endpoint(device_info['id'], 0)
                         self.current_device = device_name
                         return True
                 return False
@@ -102,8 +105,6 @@ class AudioSwitcher:
                 CoUninitialize()
         except Exception as e:
             print(f"Error switching device: {e}")
-            import traceback
-            traceback.print_exc()
             return False
 
     def load_config(self):
@@ -112,13 +113,19 @@ class AudioSwitcher:
             try:
                 with open(self.config_file, 'r') as f:
                     config = json.load(f)
-                    self.hotkeys = config.get('hotkeys', {})
+                    self.device_a = config.get('device_a')
+                    self.device_b = config.get('device_b')
+                    self.toggle_hotkey = config.get('toggle_hotkey')
             except:
                 pass
 
     def save_config(self):
         """Save configuration"""
-        config = {'hotkeys': self.hotkeys}
+        config = {
+            'device_a': self.device_a,
+            'device_b': self.device_b,
+            'toggle_hotkey': self.toggle_hotkey
+        }
         with open(self.config_file, 'w') as f:
             json.dump(config, f, indent=4)
 
@@ -127,15 +134,16 @@ class AudioSwitcherGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Audio Output Switcher")
-        self.root.geometry("500x450")
+        self.root.geometry("500x550")
         self.root.resizable(False, False)
 
         self.switcher = AudioSwitcher()
-        self.registered_hotkeys = []
         self.recording_hotkey = False
-        self.recorded_keys = []
+        self.hotkey_registered = False
 
         self.setup_ui()
+        self.update_current_device()
+        self.register_saved_hotkey()
 
     def setup_ui(self):
         # Title
@@ -152,65 +160,66 @@ class AudioSwitcherGUI:
 
         self.current_device_label = tk.Label(
             current_frame,
-            text="Not set",
-            font=("Arial", 10),
+            text="Loading...",
+            font=("Arial", 12, "bold"),
             fg="blue"
         )
         self.current_device_label.pack()
 
         # Device selection frame
-        device_frame = tk.LabelFrame(self.root, text="Available Devices", padx=10, pady=10)
-        device_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        device_frame = tk.LabelFrame(self.root, text="Select Two Devices to Toggle", padx=10, pady=10)
+        device_frame.pack(fill="x", padx=20, pady=10)
 
-        # Device list
-        self.device_listbox = tk.Listbox(device_frame, height=6)
-        self.device_listbox.pack(fill="both", expand=True, pady=5)
+        # Device A
+        tk.Label(device_frame, text="Device A:", font=("Arial", 10, "bold")).grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.device_a_combo = ttk.Combobox(device_frame, values=self.switcher.get_device_names(), state="readonly", width=35)
+        self.device_a_combo.grid(row=0, column=1, padx=5, pady=5)
+        if self.switcher.device_a:
+            self.device_a_combo.set(self.switcher.device_a)
 
-        for device_name in self.switcher.get_device_names():
-            self.device_listbox.insert(tk.END, device_name)
+        # Device B
+        tk.Label(device_frame, text="Device B:", font=("Arial", 10, "bold")).grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.device_b_combo = ttk.Combobox(device_frame, values=self.switcher.get_device_names(), state="readonly", width=35)
+        self.device_b_combo.grid(row=1, column=1, padx=5, pady=5)
+        if self.switcher.device_b:
+            self.device_b_combo.set(self.switcher.device_b)
 
-        # Switch button
-        switch_btn = tk.Button(
+        # Save devices button
+        save_devices_btn = tk.Button(
             device_frame,
-            text="Switch to Selected Device",
-            command=self.switch_device,
+            text="Save Device Selection",
+            command=self.save_devices,
             bg="#4CAF50",
             fg="white",
             font=("Arial", 10, "bold"),
             cursor="hand2"
         )
-        switch_btn.pack(pady=5)
+        save_devices_btn.grid(row=2, column=0, columnspan=2, pady=10)
 
         # Hotkey configuration frame
-        hotkey_frame = tk.LabelFrame(self.root, text="Hotkey Configuration", padx=10, pady=10)
+        hotkey_frame = tk.LabelFrame(self.root, text="Toggle Hotkey", padx=10, pady=10)
         hotkey_frame.pack(fill="x", padx=20, pady=10)
 
-        # Hotkey setup
-        hotkey_setup_frame = tk.Frame(hotkey_frame)
-        hotkey_setup_frame.pack(fill="x", pady=5)
-
-        tk.Label(hotkey_setup_frame, text="Hotkey:").grid(row=0, column=0, padx=5, sticky="w")
+        # Current hotkey display
+        tk.Label(hotkey_frame, text="Current Hotkey:", font=("Arial", 10)).pack(anchor="w", padx=5, pady=5)
 
         self.hotkey_display_label = tk.Label(
-            hotkey_setup_frame,
-            text="No hotkey recorded",
-            font=("Arial", 10, "bold"),
+            hotkey_frame,
+            text=self.switcher.toggle_hotkey if self.switcher.toggle_hotkey else "No hotkey set",
+            font=("Arial", 12, "bold"),
             bg="#f0f0f0",
             relief="sunken",
-            width=25,
-            anchor="w",
-            padx=5,
-            pady=5
+            height=2
         )
-        self.hotkey_display_label.grid(row=0, column=1, padx=5)
+        self.hotkey_display_label.pack(fill="x", padx=5, pady=5)
 
-        # Button frame
+        # Buttons
         button_frame = tk.Frame(hotkey_frame)
         button_frame.pack(fill="x", pady=5)
 
         self.record_btn = tk.Button(
             button_frame,
-            text="🎤 Record Hotkey",
+            text="Record New Hotkey",
             command=self.start_recording_hotkey,
             bg="#2196F3",
             fg="white",
@@ -220,71 +229,86 @@ class AudioSwitcherGUI:
         )
         self.record_btn.pack(side="left", padx=5)
 
-        self.apply_hotkey_btn = tk.Button(
-            button_frame,
-            text="✓ Apply to Selected Device",
-            command=self.set_hotkey,
-            bg="#4CAF50",
+        # Manual toggle button
+        toggle_frame = tk.Frame(self.root)
+        toggle_frame.pack(fill="x", padx=20, pady=10)
+
+        self.toggle_btn = tk.Button(
+            toggle_frame,
+            text="Toggle Devices Now",
+            command=self.toggle_devices,
+            bg="#FF9800",
             fg="white",
-            font=("Arial", 10, "bold"),
+            font=("Arial", 12, "bold"),
             cursor="hand2",
-            width=20,
-            state="disabled"
+            height=2
         )
-        self.apply_hotkey_btn.pack(side="left", padx=5)
-
-        # Info label
-        info_label = tk.Label(
-            hotkey_frame,
-            text="Click 'Record Hotkey', then press your desired key combination",
-            font=("Arial", 8),
-            fg="gray"
-        )
-        info_label.pack()
-
-        # Registered hotkeys display
-        self.hotkey_text = tk.Text(hotkey_frame, height=3, state='disabled')
-        self.hotkey_text.pack(fill="x", pady=5)
-
-        self.update_hotkey_display()
+        self.toggle_btn.pack(fill="x")
 
         # Refresh button
         refresh_btn = tk.Button(
             self.root,
-            text="Refresh Devices",
-            command=self.refresh_devices,
+            text="Refresh",
+            command=self.refresh_all,
             cursor="hand2"
         )
         refresh_btn.pack(pady=5)
 
-    def switch_device(self):
-        """Switch to selected device"""
-        selection = self.device_listbox.curselection()
-        if not selection:
-            messagebox.showwarning("No Selection", "Please select a device first")
+    def update_current_device(self):
+        """Update current device display"""
+        current = self.switcher.get_current_device()
+        self.current_device_label.config(text=current)
+
+    def save_devices(self):
+        """Save selected devices"""
+        device_a = self.device_a_combo.get()
+        device_b = self.device_b_combo.get()
+
+        if not device_a or not device_b:
+            messagebox.showwarning("Incomplete Selection", "Please select both Device A and Device B")
             return
 
-        device_name = self.device_listbox.get(selection[0])
+        if device_a == device_b:
+            messagebox.showwarning("Same Device", "Device A and Device B must be different")
+            return
 
-        if self.switcher.switch_to_device(device_name):
-            self.current_device_label.config(text=device_name)
-            messagebox.showinfo("Success", f"Switched to: {device_name}")
+        self.switcher.device_a = device_a
+        self.switcher.device_b = device_b
+        self.switcher.save_config()
+        messagebox.showinfo("Success", f"Devices saved!\nA: {device_a}\nB: {device_b}")
+
+    def toggle_devices(self):
+        """Toggle between device A and B"""
+        if not self.switcher.device_a or not self.switcher.device_b:
+            messagebox.showwarning("Not Configured", "Please select and save Device A and Device B first")
+            return
+
+        current = self.switcher.get_current_device()
+
+        # Toggle logic
+        if current == self.switcher.device_a:
+            target = self.switcher.device_b
+        elif current == self.switcher.device_b:
+            target = self.switcher.device_a
         else:
-            messagebox.showerror("Error", "Failed to switch device")
+            # If current is neither A nor B, switch to A
+            target = self.switcher.device_a
+
+        if self.switcher.switch_to_device(target):
+            self.update_current_device()
+            print(f"Switched to: {target}")
+        else:
+            messagebox.showerror("Error", f"Failed to switch to {target}")
 
     def start_recording_hotkey(self):
         """Start recording hotkey from keyboard input"""
         self.recording_hotkey = True
-        self.recorded_keys = []
         self.record_btn.config(
-            text="⏺ Press keys now...",
+            text="Press keys now...",
             bg="#FF5722",
             state="disabled"
         )
-        self.hotkey_display_label.config(
-            text="Waiting for input...",
-            fg="red"
-        )
+        self.hotkey_display_label.config(text="Waiting for input...", fg="red")
 
         # Start keyboard listener in a thread
         threading.Thread(target=self._record_keys, daemon=True).start()
@@ -309,7 +333,6 @@ class AudioSwitcherGUI:
         # Wait for key combination (max 5 seconds)
         while self.recording_hotkey and time.time() - start_time < 5:
             time.sleep(0.1)
-            # If we have at least one key and no new keys for 0.5 seconds, finish
             if pressed_keys and time.time() - start_time > 0.5:
                 break
 
@@ -320,7 +343,6 @@ class AudioSwitcherGUI:
 
         # Build hotkey string
         if pressed_keys:
-            # Separate modifiers and regular keys
             modifiers = []
             regular_keys = []
 
@@ -330,7 +352,6 @@ class AudioSwitcherGUI:
                 else:
                     regular_keys.append(key)
 
-            # Build hotkey string: modifiers + last regular key
             if regular_keys and last_key in regular_keys:
                 hotkey_parts = sorted(modifiers) + [last_key]
             elif modifiers:
@@ -344,132 +365,61 @@ class AudioSwitcherGUI:
             self.root.after(0, self._cancel_recording)
 
     def _finish_recording(self, hotkey_str):
-        """Finish recording and display the hotkey"""
+        """Finish recording and apply hotkey"""
         self.recording_hotkey = False
-        self.hotkey_display_label.config(
-            text=hotkey_str,
-            fg="green"
-        )
-        self.record_btn.config(
-            text="🎤 Record Hotkey",
-            bg="#2196F3",
-            state="normal"
-        )
-        self.apply_hotkey_btn.config(state="normal")
-        self.recorded_hotkey = hotkey_str
+
+        # Unregister old hotkey
+        if self.hotkey_registered and self.switcher.toggle_hotkey:
+            try:
+                keyboard.remove_hotkey(self.switcher.toggle_hotkey)
+            except:
+                pass
+
+        # Register new hotkey
+        try:
+            keyboard.add_hotkey(hotkey_str, lambda: self.root.after(0, self.toggle_devices))
+            self.switcher.toggle_hotkey = hotkey_str
+            self.switcher.save_config()
+            self.hotkey_registered = True
+
+            self.hotkey_display_label.config(text=hotkey_str, fg="green")
+            self.record_btn.config(text="Record New Hotkey", bg="#2196F3", state="normal")
+            messagebox.showinfo("Success", f"Hotkey '{hotkey_str}' registered!\nPress it anytime to toggle devices.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to register hotkey: {str(e)}")
+            self._cancel_recording()
 
     def _cancel_recording(self):
         """Cancel recording"""
         self.recording_hotkey = False
-        self.record_btn.config(
-            text="🎤 Record Hotkey",
-            bg="#2196F3",
-            state="normal"
-        )
-        self.hotkey_display_label.config(
-            text="Recording cancelled",
-            fg="orange"
-        )
-
-    def set_hotkey(self):
-        """Set hotkey for selected device"""
-        selection = self.device_listbox.curselection()
-        if not selection:
-            messagebox.showwarning("No Selection", "Please select a device first")
-            return
-
-        device_name = self.device_listbox.get(selection[0])
-
-        if not hasattr(self, 'recorded_hotkey') or not self.recorded_hotkey:
-            messagebox.showwarning("No Hotkey", "Please record a hotkey first")
-            return
-
-        hotkey = self.recorded_hotkey
-
-        try:
-            # Unregister old hotkey if exists
-            for hk, dev in list(self.switcher.hotkeys.items()):
-                if dev == device_name and hk in self.registered_hotkeys:
-                    keyboard.remove_hotkey(hk)
-                    self.registered_hotkeys.remove(hk)
-
-            # Register new hotkey
-            keyboard.add_hotkey(
-                hotkey,
-                lambda dn=device_name: self.hotkey_switch(dn)
-            )
-            self.registered_hotkeys.append(hotkey)
-
-            self.switcher.hotkeys[hotkey] = device_name
-            self.switcher.save_config()
-
-            self.update_hotkey_display()
-            messagebox.showinfo("Success", f"Hotkey '{hotkey}' assigned to {device_name}")
-
-            # Reset for next recording
-            self.recorded_hotkey = None
-            self.hotkey_display_label.config(text="No hotkey recorded", fg="black")
-            self.apply_hotkey_btn.config(state="disabled")
-
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to set hotkey: {str(e)}")
-
-    def hotkey_switch(self, device_name):
-        """Switch device via hotkey"""
-        if self.switcher.switch_to_device(device_name):
-            self.root.after(0, lambda: self.current_device_label.config(text=device_name))
-
-    def update_hotkey_display(self):
-        """Update hotkey display"""
-        self.hotkey_text.config(state='normal')
-        self.hotkey_text.delete(1.0, tk.END)
-
-        if self.switcher.hotkeys:
-            for hotkey, device in self.switcher.hotkeys.items():
-                self.hotkey_text.insert(tk.END, f"{hotkey} → {device}\n")
+        self.record_btn.config(text="Record New Hotkey", bg="#2196F3", state="normal")
+        if self.switcher.toggle_hotkey:
+            self.hotkey_display_label.config(text=self.switcher.toggle_hotkey, fg="black")
         else:
-            self.hotkey_text.insert(tk.END, "No hotkeys configured")
+            self.hotkey_display_label.config(text="No hotkey set", fg="black")
 
-        self.hotkey_text.config(state='disabled')
-
-    def refresh_devices(self):
-        """Refresh device list"""
-        self.switcher.load_devices()
-        self.device_listbox.delete(0, tk.END)
-
-        device_names = self.switcher.get_device_names()
-
-        if not device_names:
-            messagebox.showwarning(
-                "No Devices Found",
-                "No audio output devices detected.\n\n"
-                "Possible solutions:\n"
-                "1. Run as Administrator\n"
-                "2. Check if audio devices are enabled in Windows Sound Settings\n"
-                "3. Try restarting the application"
-            )
-            return
-
-        for device_name in device_names:
-            self.device_listbox.insert(tk.END, device_name)
-
-        messagebox.showinfo("Success", f"Found {len(device_names)} device(s)")
-
-    def register_saved_hotkeys(self):
-        """Register hotkeys from config file"""
-        for hotkey, device in self.switcher.hotkeys.items():
+    def register_saved_hotkey(self):
+        """Register hotkey from config file"""
+        if self.switcher.toggle_hotkey:
             try:
                 keyboard.add_hotkey(
-                    hotkey,
-                    lambda dn=device: self.hotkey_switch(dn)
+                    self.switcher.toggle_hotkey,
+                    lambda: self.root.after(0, self.toggle_devices)
                 )
-                self.registered_hotkeys.append(hotkey)
+                self.hotkey_registered = True
             except Exception as e:
-                print(f"Failed to register hotkey {hotkey}: {e}")
+                print(f"Failed to register saved hotkey: {e}")
+
+    def refresh_all(self):
+        """Refresh everything"""
+        self.switcher.load_devices()
+        self.device_a_combo.config(values=self.switcher.get_device_names())
+        self.device_b_combo.config(values=self.switcher.get_device_names())
+        self.update_current_device()
+        messagebox.showinfo("Refreshed", f"Found {len(self.switcher.devices)} devices")
 
     def run(self):
         """Start the application"""
-        self.register_saved_hotkeys()
         self.root.mainloop()
 
 
@@ -479,4 +429,6 @@ if __name__ == "__main__":
         app.run()
     except Exception as e:
         print(f"Error starting application: {e}")
+        import traceback
+        traceback.print_exc()
         input("Press Enter to exit...")
